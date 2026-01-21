@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Manager AI</title>
+  
+  <!-- Vue 3 & Tailwind CSS CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Tailwind Config เพื่อเปิดใช้งาน Dark Mode ผ่าน Class -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: '#3B82F6',
+            secondary: '#10B981',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-300">
+
+  <div id="app" class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-3xl">
+      
+      <!-- Header: Dark Mode Toggle -->
+      <header class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+          <span>🤖</span> Task AI Manager
+        </h1>
+        <button 
+          @click="toggleDarkMode" 
+          class="p-2 rounded-full bg-white dark:bg-gray-700 shadow-md hover:scale-110 transition-transform">
+          <span v-if="isDarkMode">☀️</span>
+          <span v-else>🌙</span>
+        </button>
+      </header>
+
+      <!-- Main Layout: Form & List -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Left: Add Task Form -->
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 h-fit">
+          <h2 class="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-200">สร้างงานใหม่</h2>
+          
+          <form @submit.prevent="addTask" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1 dark:text-gray-300">ชื่องาน</label>
+              <input 
+                v-model="newTask.title" 
+                type="text" 
+                placeholder="เช่น ทำรายงาน..." 
+                class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary outline-none transition"
+                required
+              >
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium mb-1 dark:text-gray-300">สถานะ</label>
+              <select 
+                v-model="newTask.status_id" 
+                class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary outline-none transition">
+                <option value="1">🟡 รอดำเนินการ</option>
+                <option value="2">🔵 กำลังทำ</option>
+                <option value="3">🟢 เสร็จสิ้น</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium mb-1 dark:text-gray-300">วันครบกำหนด</label>
+              <input 
+                v-model="newTask.due_date" 
+                type="datetime-local" 
+                class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary outline-none transition"
+              >
+            </div>
+
+            <button 
+              type="submit" 
+              :disabled="isLoading"
+              class="w-full py-2 px-4 bg-primary hover:bg-blue-600 text-white font-semibold rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed">
+              {{ isLoading ? 'กำลังบันทึก...' : 'เพิ่มงาน' }}
+            </button>
+          </form>
+        </div>
+
+        <!-- Right: Task List -->
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold text-gray-700 dark:text-gray-200">รายการงาน</h2>
+            <span class="text-sm text-gray-500 dark:text-gray-400">{{ tasks.length }} งาน</span>
+          </div>
+
+          <div v-if="tasks.length === 0" class="text-center py-10 text-gray-400">
+            <p>ยังไม่มีงานเลย</p>
+            <button @click="fetchTasks" class="text-primary text-sm hover:underline">โหลดข้อมูลใหม่</button>
+          </div>
+
+          <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+            <div 
+              v-for="task in tasks" 
+              :key="task.id" 
+              class="group flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600 hover:shadow-md transition-all"
+            >
+              <div class="flex-1">
+                <h3 class="font-medium text-gray-900 dark:text-gray-100" :class="{'line-through text-gray-500': task.status_id == 3}">
+                  {{ task.title }}
+                </h3>
+                <div class="flex items-center gap-2 mt-1">
+                  <span 
+                    class="text-xs px-2 py-0.5 rounded-full"
+                    :class="getStatusColor(task.status_id)"
+                  >
+                    {{ getStatusText(task.status_id) }}
+                  </span>
+                  <span v-if="task.due_date" class="text-xs text-gray-400">
+                    📅 {{ formatDate(task.due_date) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button 
+                  @click="updateStatus(task.id, 3)" 
+                  class="p-1.5 text-green-500 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg" title="ทำเสร็จ">
+                  ✓
+                </button>
+                <button 
+                  @click="deleteTask(task.id)" 
+                  class="p-1.5 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg" title="ลบ">
+                  🗑️
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        const tasks = ref([]);
+        const isLoading = ref(false);
+        const isDarkMode = ref(false);
+        
+        const newTask = ref({
+          title: '',
+          status_id: '1',
+          due_date: ''
+        });
+
+        // --- API Functions ---
+        const API_URL = 'http://localhost:3000/tasks'; // แก้ Port ให้ตรงกับ Backend
+
+        const fetchTasks = async () => {
+          try {
+            const res = await fetch(API_URL);
+            tasks.value = await res.json();
+          } catch (error) {
+            console.error("Error fetching tasks:", error);
+            alert("เชื่อมต่อ Backend ไม่ได้ กรุณาตรวจสอบว่ารัน npm start หรือยัง");
+          }
+        };
+
+        const addTask = async () => {
+          isLoading.value = true;
+          try {
+            const res = await fetch(API_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newTask.value)
+            });
+            
+            if (res.ok) {
+              newTask.value.title = '';
+              newTask.value.due_date = '';
+              newTask.value.status_id = '1';
+              fetchTasks();
+            } else {
+              alert("เกิดข้อผิดพลาดในการสร้างงาน");
+            }
+          } catch (error) {
+            console.error(error);
+          } finally {
+            isLoading.value = false;
+          }
+        };
+
+        const updateStatus = async (id, statusId) => {
+          try {
+            await fetch(`${API_URL}/${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status_id: statusId })
+            });
+            fetchTasks();
+          } catch (error) {
+            console.error(error);
+          }
+        };
+
+        const deleteTask = async (id) => {
+          if(confirm('ต้องการลบงานนี้ใช่ไหม?')) {
+            try {
+              await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+              fetchTasks();
+            } catch (error) {
+              console.error(error);
+            }
+          }
+        };
+
+        // --- UI Helpers ---
+        const toggleDarkMode = () => {
+          isDarkMode.value = !isDarkMode.value;
+          if (isDarkMode.value) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        };
+
+        const getStatusText = (id) => {
+          const map = { 1: 'รอดำเนินการ', 2: 'กำลังทำ', 3: 'เสร็จสิ้น' };
+          return map[id] || 'ไม่ระบุ';
+        };
+
+        const getStatusColor = (id) => {
+          const map = { 
+            1: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300', 
+            2: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300', 
+            3: 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' 
+          };
+          return map[id] || 'bg-gray-100 text-gray-800';
+        };
+
+        const formatDate = (dateStr) => {
+          return new Date(dateStr).toLocaleDateString('th-TH', {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+          });
+        };
+
+        onMounted(() => {
+          fetchTasks();
+          // Check system preference for dark mode
+          if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            toggleDarkMode();
+          }
+        });
+
+        return {
+          tasks, newTask, isLoading, isDarkMode,
+          addTask, fetchTasks, updateStatus, deleteTask, toggleDarkMode,
+          getStatusText, getStatusColor, formatDate
+        };
+      }
+    }).mount('#app');
+  </script>
+
+  <style>
+    /* Custom Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #4b5563; }
+  </style>
+</body>
+</html>
